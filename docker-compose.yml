@@ -8,7 +8,7 @@
 # https://manual.seafile.com/latest/setup/setup_ce_by_docker/#getting-started
 # 
 # If you're running Seafile behind a reverse proxy, check the guide here on how
-# to get it setup with HTTPS: [link]
+# to get it setup with HTTPS: https://github.com/soni801/seafile-truenas/blob/main/seafile-reverse-proxy.md
 # -------------------------------------------------------------------------------------
 x-common-data:
   # Volume configuration

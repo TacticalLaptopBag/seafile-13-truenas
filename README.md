@@ -12,6 +12,11 @@ with only minor configuration options specified at the top of the file.
 
 Please submit a GitHub issue if something doesn't work as expected.
 
+## Running behind a Reverse Proxy
+
+If you're trying to use Seafile behind a reverse proxy that handles your HTTPS certs,
+check out [this guide](seafile-reverse-proxy.md).
+
 ---
 
 I probably don't need this disclaimer, but I'm including it anyway: Please note that this project is not affiliated
