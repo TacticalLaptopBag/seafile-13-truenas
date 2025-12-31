@@ -1,6 +1,6 @@
 # seafile-truenas
 
-A unified Docker Compose template file for getting a Seafile server up and running in TrueNAS with minimal configuration.
+A unified Docker Compose template file for getting a Seafile 13 server up and running in TrueNAS with minimal configuration.
 
 As I was setting up TrueNAS, I realised that Seafile would be the perfect way of serving my files.
 However, it turns out that Seafile doesn't have a native TrueNAS application. Even more annoyingly, its setup through
