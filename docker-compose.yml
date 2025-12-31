@@ -1,60 +1,77 @@
-# -------------------------------------------------------------------------------------
-# USER CONFIGURATION
-# This section of the file contains the values you will need to edit to customise your
-# instance. You can read more about different configuration options in the Seafile
-# documentation, although do note that the variables are named slightly differently
-# in this deployment configuration.
-#
-# https://manual.seafile.com/latest/setup/setup_ce_by_docker/#getting-started
-# -------------------------------------------------------------------------------------
 x-common-data:
-  # Volume configuration
-  # ONLY EDIT THE VALUE BEFORE THE COLON (:). The value after the colon is the internal
-  # mount point in the respective Docker containers. This has to be included here because
-  # of a limitation in YAML aliases.
-  - &seafile_volume "/opt/seafile-data:/shared"
-  - &mysql_volume "/opt/seafile-mysql/db:/var/lib/mysql"
-  - &caddy_volume "/opt/seafile-caddy:/data/caddy"
-  - &seadoc_volume "/opt/seadoc-data:/shared"
+  # Startup params
+  - &seafile_server_hostname "seafile.example.com"
+  - &seafile_server_protocol "http"
+  - &seafile_server_url "http://seafile.example.com"
+  - &seadoc_server_url "http://seafile.example.com/sdoc-server"
+  - &time_zone "UTC"
+  - &jwt_private_key "changeme"
 
-  # Database configuration
-  - &init_mysql_root_password "changeme"
-  - &mysql_db_password "changeme" # Password for the "seafile" db user (used internally)
+  # Database config
+  - &db_host "db"
+  - &db_user "seafile"
+  - &db_password "changeme"
+  - &db_ccnet_db_name "ccnet_db"
+  - &db_seafile_db_name "seafile_db"
+  - &db_seahub_db_name "seahub_db"
 
-  # Server connection info
-  - &seafile_server_hostname "127.0.0.1" # The URL/IP you use to access the web interface, excluding port
-  - &seafile_server_protocol "http" # Either "http" or "https"
-  - &seafile_server_url "http://127.0.0.1" # The exact value of the entire URL, including both protocol and hostname
-  # ^ This has to be explicitly declared due to a limitation in YAML aliases.
+  # Cache config
+  - &cache_provider "redis"
 
-  # Port configuration
-  # Only edit the value before the colon, as the value after the colon once again references the internal port assignment
-  - &port_http "30022:80"
-  - &port_https "30023:443"
+  ## Redis config
+  - &redis_host "redis"
+  - &redis_port "6379"
+  - &redis_password "changeme"
 
-  # SeaDoc configuration
-  # SeaDoc is an extension of Seafile that providing an online collaborative document editor
-  # https://manual.seafile.com/latest/extension/setup_seadoc/
-  - &enable_seadoc "false" # Either "true" or "false"
-  - &seadoc_server_url "http://127.0.0.1/sdoc-server" # The same as &seafile_server_url, with "/sdoc-server" appended
+  ## Memcached config
+  - &memcached_host "memcached"
+  - &memcached_port "11211"
 
-  # The initial administrator user account created upon first launch
+  # Initial variables
+  - &init_db_root_password "changeme"
   - &init_seafile_admin_email "me@example.com"
   - &init_seafile_admin_password "changeme"
 
-  # Misc.
-  - &time_zone "Europe/Oslo"
-  - &jwt_private_key "changeme"
+  # Extensions
 
-# -------------------------------------------------------------------------------------
-# DO NOT CHANGE ANYTHING UNDER THIS LINE UNLESS YOU KNOW WHAT YOU ARE DOING
-# The rest of this file is supposed to automatically populate copnfiguration values
-# based on the data provided above. If anything doesn't work as expected, please
-# submit an issue for me to look at the problem.
-# -------------------------------------------------------------------------------------
+  ## Seadoc
+  - &enable_seadoc "true"
+
+  ## Notification
+  - &enable_notification_server "false"
+  - &notification_server_url ""
+
+  ## Seafile AI
+  - &enable_seafile_ai "false"
+  - &seafile_ai_llm_type "openai"
+  - &seafile_ai_llm_url ""
+  - &seafile_ai_llm_key ""
+  - &seafile_ai_llm_model "gpt-4o-mini"
+
+  ## Metadata
+  - &md_file_count_limit "100000"
+
+  # Ports
+  - &port_http "31080:80"
+  - &port_https "31081:443"
+
+
+volumes:
+  seafile-caddy:
+    driver: local
+  seafile-seadoc:
+    driver: local
+  seafile-db:
+    driver: local
+  seafile-data:
+    driver: local
+  seafile-redis:
+    driver: local
 
 services:
-
+  # ===========================================================================
+  # ----- Caddy -----
+  # ===========================================================================
   caddy:
     image: lucaslorentz/caddy-docker-proxy:2.9-alpine
     restart: unless-stopped
@@ -63,15 +80,10 @@ services:
       - *port_http
       - *port_https
     environment:
-      CADDY_INGRESS_NETWORKS: seafile-net
-    # Add some configuration to caddy to make it cooperate better with TrueNAS
-    labels:
-      caddy.auto_https: disable_redirects
-      caddy.default_sni: *seafile_server_hostname
-      caddy.local_certs:
+      - CADDY_INGRESS_NETWORKS=seafile-net
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - *caddy_volume
+      - seafile-caddy:/data/caddy
     networks:
       - seafile-net
     healthcheck:
@@ -81,17 +93,23 @@ services:
       timeout: 5s
       retries: 3
 
+  # ===========================================================================
+  # ----- Seadoc -----
+  # ===========================================================================
   seadoc:
-    image: seafileltd/sdoc-server:1.0-latest
+    image: seafileltd/sdoc-server:2.0-latest
     container_name: seadoc
+    restart: unless-stopped
     volumes:
-      - *seadoc_volume
+      - seafile-seadoc:/shared
+    # ports:
+    #   - "80:80"
     environment:
-      DB_HOST: db
+      DB_HOST: *db_host
       DB_PORT: 3306
-      DB_USER: seafile
-      DB_PASSWORD: *mysql_db_password
-      DB_NAME: seahub_db
+      DB_USER: *db_user
+      DB_PASSWORD: *db_password
+      DB_NAME: *db_seahub_db_name
       TIME_ZONE: *time_zone
       JWT_PRIVATE_KEY: *jwt_private_key
       NON_ROOT: false
@@ -113,15 +131,19 @@ services:
     networks:
       - seafile-net
 
+  # ===========================================================================
+  # ----- Seafile Server -----
+  # ===========================================================================
   db:
     image: mariadb:10.11
     container_name: seafile-mysql
+    restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: *init_mysql_root_password
+      MYSQL_ROOT_PASSWORD: *init_db_root_password
       MYSQL_LOG_CONSOLE: true
       MARIADB_AUTO_UPGRADE: 1
     volumes:
-      - *mysql_volume
+      - seafile-db:/var/lib/mysql
     networks:
       - seafile-net
     healthcheck:
@@ -138,27 +160,38 @@ services:
       timeout: 5s
       retries: 10
 
-  memcached:
-    image: memcached:1.6.29
-    container_name: seafile-memcached
-    entrypoint: memcached -m 256
+  redis:
+    image: redis
+    container_name: seafile-redis
+    restart: unless-stopped
+    command:
+      - /bin/sh
+      - -c
+      - redis-server --requirepass "$$REDIS_PASSWORD"
+    environment:
+      REDIS_PASSWORD: *redis_password
     networks:
       - seafile-net
+    volumes:
+      - seafile-redis:/data
 
   seafile:
-    image: seafileltd/seafile-mc:12.0-latest
+    image: seafileltd/seafile-mc:13.0-latest
     container_name: seafile
+    restart: unless-stopped
+    # ports:
+    #   - "80:80"
     volumes:
-      - *seafile_volume
+      - seafile-data:/shared
     environment:
-      DB_HOST: db
-      DB_PORT: 3306
-      DB_USER: seafile
-      DB_ROOT_PASSWD: *init_mysql_root_password
-      DB_PASSWORD: *mysql_db_password
-      SEAFILE_MYSQL_DB_CCNET_DB_NAME: ccnet_db
-      SEAFILE_MYSQL_DB_SEAFILE_DB_NAME: seafile_db
-      SEAFILE_MYSQL_DB_SEAHUB_DB_NAME: seahub_db
+      SEAFILE_MYSQL_DB_HOST: *db_host
+      SEAFILE_MYSQL_DB_PORT: 3306
+      SEAFILE_MYSQL_DB_USER: *db_user
+      SEAFILE_MYSQL_DB_PASSWORD: *db_password
+      INIT_SEAFILE_MYSQL_ROOT_PASSWORD: *init_db_root_password
+      SEAFILE_MYSQL_DB_CCNET_DB_NAME: *db_ccnet_db_name
+      SEAFILE_MYSQL_DB_SEAFILE_DB_NAME: *db_seafile_db_name
+      SEAFILE_MYSQL_DB_SEAHUB_DB_NAME: *db_seahub_db_name
       TIME_ZONE: *time_zone
       INIT_SEAFILE_ADMIN_EMAIL: *init_seafile_admin_email
       INIT_SEAFILE_ADMIN_PASSWORD: *init_seafile_admin_password
@@ -168,15 +201,35 @@ services:
       NON_ROOT: false
       JWT_PRIVATE_KEY: *jwt_private_key
       SEAFILE_LOG_TO_STDOUT: false
+      ENABLE_GO_FILESERVER: true
       ENABLE_SEADOC: *enable_seadoc
       SEADOC_SERVER_URL: *seadoc_server_url
+      CACHE_PROVIDER: *cache_provider
+      REDIS_HOST: *redis_host
+      REDIS_PORT: *redis_port
+      REDIS_PASSWORD: *redis_password
+      MEMCACHED_HOST: *memcached_host
+      MEMCACHED_PORT: *memcached_port
+      ENABLE_NOTIFICATION_SERVER: *enable_notification_server
+      INNER_NOTIFICATION_SERVER_URL: http://notification-server:8083
+      NOTIFICATION_SERVER_URL: *notification_server_url
+      ENABLE_SEAFILE_AI: *enable_seafile_ai
+      SEAFILE_AI_SERVER_URL: http://seafile-ai:8888
+      SEAFILE_AI_SECRET_KEY: *jwt_private_key
+      MD_FILE_COUNT_LIMIT: *md_file_count_limit
     labels:
       caddy: *seafile_server_url
       caddy.reverse_proxy: "{{upstreams 80}}"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     depends_on:
       db:
         condition: service_healthy
-      memcached:
+      redis:
         condition: service_started
     networks:
       - seafile-net
@@ -184,4 +237,3 @@ services:
 networks:
   seafile-net:
     name: seafile-net
-
